@@ -14,7 +14,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(OpenGL REQUIRED)
 find_package(glfw3 REQUIRED)
-
+find_package(Threads REQUIRED)
+find_package(OpenCV REQUIRED)
 
 #
 # Dear ImGui
@@ -63,10 +64,10 @@ add_executable(controller
   main.cpp
 
   src/ipc.cpp
+  src/video.cpp
   src/input.cpp
   src/config.cpp
   src/recognizer.cpp
-
   src/dashboard/dashboard.cpp
 )
 
@@ -82,4 +83,19 @@ target_link_libraries(controller
   PRIVATE
 
   imgui
+  Threads::Threads
+)
+
+target_include_directories(controller
+  PRIVATE
+  include
+  third_party/stb
+)
+
+target_link_libraries(controller
+  PRIVATE
+
+  imgui
+  Threads::Threads
+  ${OpenCV_LIBS}
 )

@@ -7,27 +7,28 @@
 #include "protocol/inference.hpp"
 
 
-enum class IPCReceiveStatus
-{
-  DISCONNECTED,
-  ERROR,
-  RESULT,
-  METRICS
-};
-
-
 class IPCServer
 {
   public:
+
+    enum class MessageType
+    {
+      RESULT,
+      METRICS
+    };
+
 
     explicit IPCServer(uint16_t port);
 
     ~IPCServer();
 
-    IPCReceiveStatus receive(
+
+    bool receive(
+        MessageType& type,
         inference::Result& result,
         inference::Metrics& metrics
         );
+
 
   private:
 

@@ -191,69 +191,54 @@ bool IPCServer::setup()
 }
 
 
-IPCReceiveStatus IPCServer::receive(
+bool IPCServer::receive(
+    MessageType& type,
     inference::Result& result,
     inference::Metrics& metrics
     )
 {
   uint8_t message_type;
-
   std::vector<char> payload;
 
 
-  if(!receive_message(
-        message_type,
-        payload
-        ))
-  {
-    return IPCReceiveStatus::DISCONNECTED;
-  }
+  if(!receive_message(message_type, payload))
+    return false;
 
 
-  switch(message_type)
-  {
-    case static_cast<uint8_t>(
-        inference::MessageType::RESULT
-        ):
-    {
+  switch(message_type) {
+
+    case static_cast<uint8_t>(inference::MessageType::RESULT): {
       if(!deserialize_result(
             payload.data(),
             payload.size(),
             result
             ))
-      {
-        return IPCReceiveStatus::ERROR;
-      }
+        return false;
 
-      return IPCReceiveStatus::RESULT;
+      type = MessageType::RESULT;
+
+      return true;
     }
 
 
-    case static_cast<uint8_t>(
-        inference::MessageType::METRICS
-        ):
-    {
+    case static_cast<uint8_t>(inference::MessageType::METRICS): {
       if(!deserialize_metrics(
             payload.data(),
             payload.size(),
             metrics
             ))
-      {
-        return IPCReceiveStatus::ERROR;
-      }
+        return false;
 
-      return IPCReceiveStatus::METRICS;
+      type = MessageType::METRICS;
+
+      return true;
     }
-
 
     default:
 
-      std::cerr
-        << "Unknown message type: "
-        << static_cast<int>(message_type)
-        << "\n";
+    std::cerr << "Unknown message type: " << static_cast<int>(message_type) << "\n";
 
-      return IPCReceiveStatus::ERROR;
+    return false;
   }
 }
 
