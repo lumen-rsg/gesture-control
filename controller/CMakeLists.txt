@@ -68,7 +68,6 @@ add_executable(controller
   src/recognizer.cpp
 
   src/dashboard/dashboard.cpp
-  src/dashboard/dashboard_state.cpp
 )
 
 
