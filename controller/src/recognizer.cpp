@@ -1,47 +1,47 @@
 #include "recognizer.hpp"
 
-#include <cmath>
 
-GestureState GestureRecognizer::process(const gesture::Frame& frame) const
+GestureState GestureRecognizer::process(const inference::Result& result) const
 {
   GestureState state;
 
-  if(frame.hand_count < 1)
+  if(!result.hand_present)
+    return state;
+
+  const auto& classification = result.classification;
+
+  if(classification.class_id == NO_CLASSIFICATION)
+    return state;
+
+  if(classification.confidence < MIN_CONFIDENCE)
     return state;
 
   state.hand_present = true;
 
-  const auto& hand = frame.hands[0];
+  state.confidence = classification.confidence;
 
-  const auto& index = hand.landmarks[INDEX_TIP];
+  state.hand_x = result.hand.x;
 
-  const auto& thumb = hand.landmarks[THUMB_TIP];
+  state.hand_y = result.hand.y;
 
-  state.pointer_x = index.x;
-  state.pointer_y = index.y;
+  state.hand_width = result.hand.width;
 
-  state.pinch_distance =
-    distance(index, thumb);
+  state.hand_height = result.hand.height;
 
-  state.pinch =
-    state.pinch_distance <
-    PINCH_THRESHOLD;
+  switch(classification.class_id)
+  {
+    case FIST_CLASS:
+      state.gesture = GestureType::FIST;
+      break;
+
+    case OPEN_HAND_CLASS:
+      state.gesture = GestureType::OPEN_HAND;
+      break;
+
+    default:
+      state.gesture = GestureType::NONE;
+      break;
+  }
 
   return state;
-}
-
-float GestureRecognizer::distance(
-    const gesture::Landmark& a,
-    const gesture::Landmark& b
-    ) const
-{
-  const float dx = a.x - b.x;
-  const float dy = a.y - b.y;
-  const float dz = a.z - b.z;
-
-  return std::sqrt(
-      dx * dx +
-      dy * dy +
-      dz * dz
-      );
 }

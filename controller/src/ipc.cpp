@@ -3,18 +3,107 @@
 #include <cstring>
 #include <iostream>
 
+#include <netinet/in.h>
 #include <sys/socket.h>
-#include <sys/un.h>
 #include <unistd.h>
 
+#include "protocol/protocol.hpp"
 
-IPCServer::IPCServer(const std::string& socket_path) :
-  socket_path_(socket_path),
+
+namespace
+{
+
+  constexpr std::size_t HEADER_SIZE = 12;
+
+  constexpr std::size_t RESULT_SIZE = 44;
+
+  constexpr std::size_t METRICS_SIZE = 56;
+
+  constexpr std::size_t MAX_PAYLOAD_SIZE = 1024 * 1024;
+
+
+  uint32_t read_u32(const char* data)
+  {
+    uint32_t value;
+
+    std::memcpy(
+        &value,
+        data,
+        sizeof(value)
+        );
+
+    return value;
+  }
+
+
+  uint64_t read_u64(const char* data)
+  {
+    uint64_t value;
+
+    std::memcpy(
+        &value,
+        data,
+        sizeof(value)
+        );
+
+    return value;
+  }
+
+
+  float read_float(const char* data)
+  {
+    float value;
+
+    std::memcpy(
+        &value,
+        data,
+        sizeof(value)
+        );
+
+    return value;
+  }
+
+
+  bool receive_exact(
+      int fd,
+      void* buffer,
+      std::size_t size
+      )
+  {
+    std::size_t received = 0;
+
+    while(received < size) {
+
+      ssize_t count = recv(
+          fd,
+          static_cast<char*>(buffer) + received,
+          size - received,
+          0
+          );
+
+      if(count == 0)
+        return false;
+
+      if(count < 0)
+        return false;
+
+      received += count;
+    }
+
+    return true;
+  }
+
+}
+
+
+IPCServer::IPCServer(uint16_t port) :
+  port_(port),
   server_fd_(-1),
   client_fd_(-1)
 {
   setup();
 }
+
 
 IPCServer::~IPCServer()
 {
@@ -23,185 +112,511 @@ IPCServer::~IPCServer()
 
   if(server_fd_ >= 0)
     close(server_fd_);
-
-  unlink(socket_path_.c_str());
 }
+
 
 bool IPCServer::setup()
 {
-    server_fd_ = socket(
-        AF_UNIX,
-        SOCK_STREAM,
-        0
-    );
+  server_fd_ = socket(
+      AF_INET,
+      SOCK_STREAM,
+      0
+      );
 
-    if (server_fd_ < 0) {
-        perror("socket");
-        return false;
-    }
+  if(server_fd_ < 0) {
+    perror("socket");
+    return false;
+  }
 
-    sockaddr_un addr{};
 
-    addr.sun_family = AF_UNIX;
+  int reuse = 1;
 
-    strncpy(
-        addr.sun_path,
-        socket_path_.c_str(),
-        sizeof(addr.sun_path) - 1
-    );
+  setsockopt(
+      server_fd_,
+      SOL_SOCKET,
+      SO_REUSEADDR,
+      &reuse,
+      sizeof(reuse)
+      );
 
-    unlink(socket_path_.c_str());
 
-    if (bind(
+  sockaddr_in addr{};
+
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(port_);
+  addr.sin_addr.s_addr = INADDR_ANY;
+
+
+  if(bind(
         server_fd_,
         reinterpret_cast<sockaddr*>(&addr),
         sizeof(addr)
-    ) < 0)
-    {
-        perror("bind");
-        return false;
-    }
-
-    if (listen(server_fd_, 1) < 0) {
-        perror("listen");
-        return false;
-    }
-
-    std::cout << "Waiting for vision module...\n";
-
-    client_fd_ = accept(
-        server_fd_,
-        nullptr,
-        nullptr
-    );
-
-    if (client_fd_ < 0) {
-        perror("accept");
-        return false;
-    }
-
-    std::cout << "Vision connected\n";
-
-    return true;
-}
-
-bool IPCServer::receive(gesture::Frame& frame)
-{
-  constexpr size_t PACKET_SIZE =
-    sizeof(uint32_t) +                       // version
-    sizeof(uint64_t) +                       // timestamp
-    sizeof(uint8_t) +                        // hand_count
-    gesture::MAX_HANDS *
-    gesture::LANDMARK_COUNT *
-    gesture::LANDMARK_FLOATS *
-    sizeof(float);
-
-  char buffer[PACKET_SIZE];
-
-  size_t received = 0;
-
-  while(received < PACKET_SIZE)
+        ) < 0)
   {
-    ssize_t result = recv(
-        client_fd_,
-        buffer + received,
-        PACKET_SIZE - received,
-        0
-        );
-
-    if(result <= 0)
-      return false;
-
-    received += result;
+    perror("bind");
+    return false;
   }
 
-  return deserialize(
-      buffer,
-      frame
+
+  if(listen(server_fd_, 1) < 0) {
+    perror("listen");
+    return false;
+  }
+
+
+  std::cout
+    << "Waiting for vision module on port "
+    << port_
+    << "...\n";
+
+
+  client_fd_ = accept(
+      server_fd_,
+      nullptr,
+      nullptr
       );
+
+
+  if(client_fd_ < 0) {
+    perror("accept");
+    return false;
+  }
+
+
+  std::cout
+    << "Vision connected\n";
+
+
+  return true;
 }
 
 
-bool IPCServer::deserialize(
-    const char* buffer,
-    gesture::Frame& frame
+IPCReceiveStatus IPCServer::receive(
+    inference::Result& result,
+    inference::Metrics& metrics
     )
 {
-  size_t offset = 0;
+  uint8_t message_type;
+
+  std::vector<char> payload;
 
 
-  uint32_t version;
+  if(!receive_message(
+        message_type,
+        payload
+        ))
+  {
+    return IPCReceiveStatus::DISCONNECTED;
+  }
 
-  memcpy(
-      &version,
-      buffer + offset,
-      sizeof(version)
-      );
 
-  offset += sizeof(version);
+  switch(message_type)
+  {
+    case static_cast<uint8_t>(
+        inference::MessageType::RESULT
+        ):
+    {
+      if(!deserialize_result(
+            payload.data(),
+            payload.size(),
+            result
+            ))
+      {
+        return IPCReceiveStatus::ERROR;
+      }
 
-  if(version != gesture::PROTOCOL_VERSION)
+      return IPCReceiveStatus::RESULT;
+    }
+
+
+    case static_cast<uint8_t>(
+        inference::MessageType::METRICS
+        ):
+    {
+      if(!deserialize_metrics(
+            payload.data(),
+            payload.size(),
+            metrics
+            ))
+      {
+        return IPCReceiveStatus::ERROR;
+      }
+
+      return IPCReceiveStatus::METRICS;
+    }
+
+
+    default:
+
+      std::cerr
+        << "Unknown message type: "
+        << static_cast<int>(message_type)
+        << "\n";
+
+      return IPCReceiveStatus::ERROR;
+  }
+}
+
+
+bool IPCServer::receive_message(
+    uint8_t& message_type,
+    std::vector<char>& payload
+    )
+{
+  char header[HEADER_SIZE];
+
+
+  if(!receive_exact(
+        client_fd_,
+        header,
+        HEADER_SIZE
+        ))
+  {
+    return false;
+  }
+
+
+  std::size_t offset = 0;
+
+
+  //
+  // Protocol version
+  //
+
+  uint32_t version =
+    read_u32(
+        header + offset
+        );
+
+  offset += sizeof(uint32_t);
+
+
+  //
+  // Message type
+  //
+
+  message_type =
+    static_cast<uint8_t>(
+        header[offset]
+        );
+
+  offset += sizeof(uint8_t);
+
+
+  //
+  // Reserved
+  //
+
+  offset += sizeof(uint8_t);
+  offset += sizeof(uint16_t);
+
+
+  //
+  // Payload size
+  //
+
+  uint32_t payload_size =
+    read_u32(
+        header + offset
+        );
+
+
+  //
+  // Validate protocol version
+  //
+
+  if(version != inference::PROTOCOL_VERSION)
   {
     std::cerr
-      << "Protocol version mismatch\n";
+      << "Protocol version mismatch: "
+      << version
+      << " != "
+      << inference::PROTOCOL_VERSION
+      << "\n";
 
     return false;
   }
 
-  memcpy(
-      &frame.timestamp,
-      buffer + offset,
-      sizeof(frame.timestamp)
-      );
 
-  offset += sizeof(frame.timestamp);
+  //
+  // Validate payload size
+  //
 
-  memcpy(
-      &frame.hand_count,
-      buffer + offset,
-      sizeof(frame.hand_count)
-      );
-
-  offset += sizeof(frame.hand_count);
-
-  if(frame.hand_count > gesture::MAX_HANDS)
+  if(payload_size > MAX_PAYLOAD_SIZE)
   {
-    std::cerr << "Invalid hand count\n";
+    std::cerr
+      << "Payload too large: "
+      << payload_size
+      << "\n";
 
     return false;
   }
 
-  for(size_t h = 0; h < gesture::MAX_HANDS; h++)
+
+  payload.resize(payload_size);
+
+
+  if(payload_size == 0)
+    return true;
+
+
+  return receive_exact(
+      client_fd_,
+      payload.data(),
+      payload_size
+      );
+}
+
+
+bool IPCServer::deserialize_result(
+    const char* buffer,
+    std::size_t size,
+    inference::Result& result
+    )
+{
+  if(size != RESULT_SIZE)
   {
-    for(size_t l = 0; l < gesture::LANDMARK_COUNT; l++)
-    {
-      auto& landmark = frame.hands[h].landmarks[l];
+    std::cerr
+      << "Invalid RESULT payload size: "
+      << size
+      << "\n";
 
-      memcpy(
-          &landmark.x,
-          buffer + offset,
-          sizeof(float)
-          );
-
-      offset += sizeof(float);
-
-      memcpy(
-          &landmark.y,
-          buffer + offset,
-          sizeof(float)
-          );
-
-      offset += sizeof(float);
-
-      memcpy(
-          &landmark.z,
-          buffer + offset,
-          sizeof(float)
-          );
-
-      offset += sizeof(float);
-    }
+    return false;
   }
+
+
+  std::size_t offset = 0;
+
+
+  //
+  // Frame ID
+  //
+
+  result.frame_id =
+    read_u64(
+        buffer + offset
+        );
+
+  offset += sizeof(uint64_t);
+
+
+  //
+  // Timestamp
+  //
+
+  result.timestamp =
+    read_u64(
+        buffer + offset
+        );
+
+  offset += sizeof(uint64_t);
+
+
+  //
+  // Hand present
+  //
+  // uint8 + 3 bytes reserved
+  //
+
+  result.hand_present =
+    static_cast<uint8_t>(
+        buffer[offset]
+        );
+
+  offset += 4;
+
+
+  //
+  // Classification
+  //
+
+  result.classification.class_id =
+    read_u32(
+        buffer + offset
+        );
+
+  offset += sizeof(uint32_t);
+
+
+  result.classification.confidence =
+    read_float(
+        buffer + offset
+        );
+
+  offset += sizeof(float);
+
+
+  //
+  // Bounding box
+  //
+
+  result.hand.x =
+    read_float(
+        buffer + offset
+        );
+
+  offset += sizeof(float);
+
+
+  result.hand.y =
+    read_float(
+        buffer + offset
+        );
+
+  offset += sizeof(float);
+
+
+  result.hand.width =
+    read_float(
+        buffer + offset
+        );
+
+  offset += sizeof(float);
+
+
+  result.hand.height =
+    read_float(
+        buffer + offset
+        );
+
+
+  return true;
+}
+
+
+bool IPCServer::deserialize_metrics(
+    const char* buffer,
+    std::size_t size,
+    inference::Metrics& metrics
+    )
+{
+  if(size != METRICS_SIZE)
+  {
+    std::cerr
+      << "Invalid METRICS payload size: "
+      << size
+      << "\n";
+
+    return false;
+  }
+
+
+  std::size_t offset = 0;
+
+
+  //
+  // Frame ID
+  //
+
+  metrics.frame_id =
+    read_u64(
+        buffer + offset
+        );
+
+  offset += sizeof(uint64_t);
+
+
+  //
+  // Timestamp
+  //
+
+  metrics.timestamp =
+    read_u64(
+        buffer + offset
+        );
+
+  offset += sizeof(uint64_t);
+
+
+  //
+  // FPS
+  //
+
+  metrics.fps =
+    read_float(
+        buffer + offset
+        );
+
+  offset += sizeof(float);
+
+
+  //
+  // Processing stages
+  //
+
+  metrics.capture_time_us =
+    read_u32(
+        buffer + offset
+        );
+
+  offset += sizeof(uint32_t);
+
+
+  metrics.preprocess_time_us =
+    read_u32(
+        buffer + offset
+        );
+
+  offset += sizeof(uint32_t);
+
+
+  metrics.inference_time_us =
+    read_u32(
+        buffer + offset
+        );
+
+  offset += sizeof(uint32_t);
+
+
+  metrics.transfer_time_us =
+    read_u32(
+        buffer + offset
+        );
+
+  offset += sizeof(uint32_t);
+
+
+  metrics.postprocess_time_us =
+    read_u32(
+        buffer + offset
+        );
+
+  offset += sizeof(uint32_t);
+
+
+  metrics.total_latency_us =
+    read_u32(
+        buffer + offset
+        );
+
+  offset += sizeof(uint32_t);
+
+
+  //
+  // System metrics
+  //
+
+  metrics.cpu_usage =
+    read_float(
+        buffer + offset
+        );
+
+  offset += sizeof(float);
+
+
+  metrics.memory_usage =
+    read_float(
+        buffer + offset
+        );
+
+  offset += sizeof(float);
+
+
+  metrics.temperature =
+    read_float(
+        buffer + offset
+        );
+
 
   return true;
 }

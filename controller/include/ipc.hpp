@@ -1,31 +1,57 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
-#include "protocol/gesture.hpp"
+#include "protocol/inference.hpp"
+
+
+enum class IPCReceiveStatus
+{
+  DISCONNECTED,
+  ERROR,
+  RESULT,
+  METRICS
+};
 
 
 class IPCServer
 {
-public:
+  public:
 
-    explicit IPCServer(const std::string& socket_path);
+    explicit IPCServer(uint16_t port);
 
     ~IPCServer();
 
-    bool receive(gesture::Frame& frame);
+    IPCReceiveStatus receive(
+        inference::Result& result,
+        inference::Metrics& metrics
+        );
 
-private:
+  private:
 
-    std::string socket_path_;
+    uint16_t port_;
 
     int server_fd_;
     int client_fd_;
 
     bool setup();
 
-    bool deserialize(
+    bool receive_message(
+        uint8_t& message_type,
+        std::vector<char>& payload
+        );
+
+    bool deserialize_result(
         const char* buffer,
-        gesture::Frame& frame
-    );
+        std::size_t size,
+        inference::Result& result
+        );
+
+    bool deserialize_metrics(
+        const char* buffer,
+        std::size_t size,
+        inference::Metrics& metrics
+        );
 };
