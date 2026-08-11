@@ -5,6 +5,7 @@ import time
 import cv2
 import psutil
 
+from video import VideoClient
 from camera import Camera
 from crop import crop_detection
 from hand_tracker import HandTracker
@@ -53,6 +54,41 @@ def parse_args():
         default=5000,
         help="Controller TCP port"
     )
+    
+    parser.add_argument(
+        "--video-port",
+        type=int,
+        default=5001,
+        help="Video stream TCP port"
+    )
+
+    parser.add_argument(
+        "--video-width",
+        type=int,
+        default=640,
+        help="Video stream width"
+    )
+
+    parser.add_argument(
+        "--video-height",
+        type=int,
+        default=480,
+        help="Video stream height"
+    )
+
+    parser.add_argument(
+        "--video-fps",
+        type=float,
+        default=10.0,
+        help="Video stream FPS limit"
+    )
+
+    parser.add_argument(
+        "--video-quality",
+        type=int,
+        default=60,
+        help="JPEG quality"
+    )
 
     return parser.parse_args()
 
@@ -99,6 +135,17 @@ def main():
     )
 
     ipc.connect()
+
+    video = VideoClient(
+        host=args.host,
+        port=args.video_port,
+        width=args.video_width,
+        height=args.video_height,
+        fps=args.video_fps,
+        jpeg_quality=args.video_quality,
+    )
+
+    video.connect()
 
     renderer = None
 
@@ -215,8 +262,8 @@ def main():
             # Keep the previous FPS value
             # during the current one-second window.
             #
-            else:
-                fps = 0.0
+            #else:
+                #fps = 0.0
 
 
             #
@@ -287,10 +334,9 @@ def main():
             #
             # 6. Send result + metrics
             #
-            ipc.send(
-                result,
-                metrics
-            )
+            ipc.send( result, metrics)
+            
+            video.send(frame)
 
 
             #
@@ -316,6 +362,7 @@ def main():
         pass
 
     finally:
+        video.close()
         ipc.close()
 
         tracker.close()
