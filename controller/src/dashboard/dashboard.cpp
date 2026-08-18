@@ -387,13 +387,27 @@ void Dashboard::render()
 
   ImGui::Spacing();
 
-  if(state_.result.classification.class_id == 0) {
-    ImGui::Text( "FIST");
-  } else if(
-      state_.result.classification.class_id == 1) {
-    ImGui::Text( "OPEN HAND");
-  } else {
-    ImGui::Text( "NO CLASSIFICATION");
+  switch(state_.result.classification.class_id)
+  {
+    case 1:
+      ImGui::Text("FIST");
+      break;
+
+    case 2:
+      ImGui::Text("OPEN PALM");
+      break;
+
+    case 3:
+      ImGui::Text("OK");
+      break;
+
+    case 4:
+      ImGui::Text("ONE");
+      break;
+
+    default:
+      ImGui::Text("NO CLASSIFICATION");
+      break;
   }
 
   ImGui::Text( "Confidence: %.1f%%", state_.result.classification.confidence * 100.0f);
