@@ -11,9 +11,10 @@ class GestureRecognizer
 
   private:
 
-    static constexpr uint32_t FIST_CLASS = 0;
-
-    static constexpr uint32_t OPEN_HAND_CLASS = 1;
+    static constexpr uint32_t FIST_CLASS = 1;
+    static constexpr uint32_t PALM_CLASS = 2;
+    static constexpr uint32_t OK_CLASS   = 3;
+    static constexpr uint32_t ONE_CLASS  = 4;
 
     static constexpr uint32_t NO_CLASSIFICATION = 0xFFFFFFFF;
 

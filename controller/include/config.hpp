@@ -9,11 +9,13 @@ using json = nlohmann::json;
 
 struct InputConfig
 {
-  bool invert_x = true;
-  bool invert_y = false;
+  bool invert_x;
+  bool invert_y;
 
-  int screen_width = 32767;
-  int screen_height = 32767;
+  float move_scale;
+
+  int screen_width;
+  int screen_height;
 };
 
 struct DashboardConfig

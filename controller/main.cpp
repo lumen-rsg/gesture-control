@@ -24,7 +24,12 @@ int main()
 
   Config config = Config::load("../config/config.json");
 
-  VideoServer video_server(config.dashboard.video_port);
+
+  //
+  // Video server
+  //
+
+  VideoServer video_server( config.dashboard.video_port);
 
   if(config.dashboard.camera_preview) {
     if(!video_server.start()) {
@@ -32,11 +37,12 @@ int main()
     }
   }
 
+
   //
   // Input
   //
 
-  InputController input(config.input);
+  InputController input( config.input);
 
 
   //
@@ -53,13 +59,11 @@ int main()
   Dashboard dashboard;
 
   if(!dashboard.initialize()) {
-
     std::cerr << "Failed to initialize dashboard\n";
-
     return 1;
   }
 
-  dashboard.set_video_server(&video_server);
+  dashboard.set_video_server( &video_server);
 
   //
   // IPC state
@@ -70,7 +74,6 @@ int main()
 
   IPCServer::MessageType message_type;
 
-
   bool have_result = false;
   bool have_metrics = false;
 
@@ -80,15 +83,8 @@ int main()
   //
 
   while(!dashboard.should_close()) {
-
-    if(!server.receive(
-          message_type,
-          result,
-          metrics
-          ))
-    {
+    if(!server.receive( message_type, result, metrics)) {
       std::cerr << "IPC error\n";
-
       break;
     }
 
@@ -98,26 +94,21 @@ int main()
     //
 
     if(message_type == IPCServer::MessageType::RESULT) {
-
       have_result = true;
 
 
       //
-      // Gesture recognition and input control
+      // Interpret neural network result.
       //
 
       GestureState state = recognizer.process(result);
 
+
+      //
+      // Apply gesture to input device.
+      //
+
       input.update(state);
-
-
-      //
-      // Do not update dashboard yet.
-      //
-      // We want RESULT and METRICS belonging
-      // to the same frame.
-      //
-
     }
 
 
@@ -125,7 +116,7 @@ int main()
     // METRICS
     //
 
-    else if( message_type == IPCServer::MessageType::METRICS) {
+    else if(message_type == IPCServer::MessageType::METRICS) {
       have_metrics = true;
     }
 
@@ -135,32 +126,17 @@ int main()
     //
 
     if(have_result && have_metrics) {
-
       if(result.frame_id == metrics.frame_id) {
-
-        dashboard.update(result, metrics);
+        dashboard.update( result, metrics);
 
         have_result = false;
         have_metrics = false;
-      }
-      else {
-
-        //
-        // This should never happen with our
-        // current Vision implementation.
-        //
-
-        std::cerr
-          << "Frame ID mismatch: "
-          << result.frame_id
-          << " != "
-          << metrics.frame_id
-          << "\n";
+      } else {
+        std::cerr << "Frame ID mismatch: " << result.frame_id << " != " << metrics.frame_id << "\n";
 
 
         //
-        // Keep the newer frame and wait
-        // for its corresponding message.
+        // Keep the newer frame.
         //
 
         if(result.frame_id > metrics.frame_id) {
@@ -174,9 +150,6 @@ int main()
 
     //
     // Render GUI.
-    //
-    // This is currently reached after every
-    // IPC message.
     //
 
     dashboard.render();

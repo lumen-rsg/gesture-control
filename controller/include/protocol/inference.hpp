@@ -15,10 +15,21 @@ namespace inference
   };
 
 
-  struct BoundingBox
+  struct HandPosition
   {
+    //
+    // Normalized coordinates [0, 1].
+    //
+    // x/y are the palm center produced by HandMapper.
+    //
+
     float x;
     float y;
+
+    //
+    // Currently unused by HandMapper,
+    // kept in the protocol for compatibility.
+    //
 
     float width;
     float height;
@@ -34,7 +45,7 @@ namespace inference
 
     Classification classification;
 
-    BoundingBox hand;
+    HandPosition hand;
   };
 
 

@@ -1,7 +1,7 @@
 #include "recognizer.hpp"
 
 
-GestureState GestureRecognizer::process(const inference::Result& result) const
+GestureState GestureRecognizer::process( const inference::Result& result) const
 {
   GestureState state;
 
@@ -30,12 +30,20 @@ GestureState GestureRecognizer::process(const inference::Result& result) const
 
   switch(classification.class_id)
   {
+    case PALM_CLASS:
+      state.gesture = GestureType::PALM;
+      break;
+
     case FIST_CLASS:
       state.gesture = GestureType::FIST;
       break;
 
-    case OPEN_HAND_CLASS:
-      state.gesture = GestureType::OPEN_HAND;
+    case OK_CLASS:
+      state.gesture = GestureType::OK;
+      break;
+
+    case ONE_CLASS:
+      state.gesture = GestureType::ONE;
       break;
 
     default:

@@ -45,6 +45,9 @@ void Config::load_input_config(json& data_, Config& config_)
 
   if(input.contains("screen_height"))
     config_.input.screen_height = input["screen_height"];
+
+  if(input.contains("move_scale"))
+    config_.input.move_scale = input.value("move_scale", 0.25f);
 }
 
 

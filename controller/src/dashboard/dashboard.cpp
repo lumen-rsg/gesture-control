@@ -427,7 +427,7 @@ void Dashboard::render()
   if(!state_.latency_history.empty()) {
 
     ImGui::PlotLines(
-        "Latency",
+        " ",
         state_.latency_history.data(),
         static_cast<int>(
           state_.latency_history.size()

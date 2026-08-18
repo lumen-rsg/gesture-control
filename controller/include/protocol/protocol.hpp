@@ -5,7 +5,7 @@
 
 namespace inference
 {
-  constexpr uint32_t PROTOCOL_VERSION = 2;
+  constexpr uint32_t PROTOCOL_VERSION = 3;
 
   enum class ResultType : uint8_t
   {
