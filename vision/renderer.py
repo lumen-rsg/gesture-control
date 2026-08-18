@@ -21,7 +21,7 @@ class DebugRenderer:
     ) -> str:
         return self.class_names.get(
             class_id,
-            f"id={class_id}"
+            f"id={class_id}",
         )
 
     def draw(
@@ -30,28 +30,19 @@ class DebugRenderer:
         result: InferenceResult,
     ):
         """
-        Draw inference result.
+        Draw EfficientDet inference results.
 
-        Parameters:
-            frame: OpenCV BGR image
-            result: InferenceResult
-
-        Returns:
-            Annotated frame.
+        Detection coordinates are expressed in pixels
+        of the original camera frame.
         """
 
-        height, width, _ = frame.shape
-
-        #
-        # Детекции
-        #
         for detection in result.detections:
 
-            x1 = int(detection.x * width)
-            y1 = int(detection.y * height)
+            x1 = int(detection.x1)
+            y1 = int(detection.y1)
 
-            x2 = int((detection.x + detection.width) * width)
-            y2 = int((detection.y + detection.height) * height)
+            x2 = int(detection.x2)
+            y2 = int(detection.y2)
 
             cv2.rectangle(
                 frame,
@@ -75,29 +66,5 @@ class DebugRenderer:
                 (0, 255, 0),
                 self.line_thickness,
             )
-
-        #
-        # Классификации
-        #
-        y = 30
-
-        for classification in result.classifications:
-
-            label = (
-                f"{self._class_name(classification.class_id)} "
-                f"{classification.confidence:.2f}"
-            )
-
-            cv2.putText(
-                frame,
-                label,
-                (10, y),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                self.font_scale,
-                (255, 255, 0),
-                self.line_thickness,
-            )
-
-            y += 25
 
         return frame

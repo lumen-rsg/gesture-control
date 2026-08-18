@@ -35,7 +35,7 @@ class VideoClient:
 
     def connect(
         self,
-        retries: int = 20,
+        retries: int = 2,
         delay: float = 0.5
     ) -> bool:
 

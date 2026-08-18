@@ -6,25 +6,82 @@ from dataclasses import dataclass
 from models import InferenceResult
 
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 
 MESSAGE_RESULT = 0
 MESSAGE_METRICS = 1
 
-NO_CLASSIFICATION = 0xFFFFFFFF
+
+#
+# Message header:
+#
+# uint32 protocol_version
+# uint8  message_type
+# uint8  reserved
+# uint16 reserved
+# uint32 payload_size
+#
 
 HEADER_FORMAT = "<IBBHI"
-HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
-RESULT_FORMAT = "<QQB3xIfffff"
-RESULT_SIZE = struct.calcsize(RESULT_FORMAT)
+HEADER_SIZE = struct.calcsize(
+    HEADER_FORMAT
+)
+
+
+#
+# RESULT:
+#
+# uint64 frame_id
+# uint64 timestamp_ms
+# uint8  hand_present
+# 3 bytes padding
+#
+# uint32 class_id
+# float  confidence
+#
+# float hand_x
+# float hand_y
+# float hand_width
+# float hand_height
+#
+
+RESULT_FORMAT = "<QQB3xI5f"
+
+RESULT_SIZE = struct.calcsize(
+    RESULT_FORMAT
+)
 
 assert RESULT_SIZE == 44
 
+
+#
+# METRICS:
+#
+# uint64 frame_id
+# uint64 timestamp_ms
+# float  fps
+#
+# uint32 capture_time_us
+# uint32 preprocess_time_us
+# uint32 inference_time_us
+# uint32 transfer_time_us
+# uint32 postprocess_time_us
+# uint32 total_latency_us
+#
+# float cpu_usage
+# float memory_usage
+# float temperature
+#
+
 METRICS_FORMAT = "<QQfIIIIIIfff"
-METRICS_SIZE = struct.calcsize(METRICS_FORMAT)
+
+METRICS_SIZE = struct.calcsize(
+    METRICS_FORMAT
+)
 
 assert METRICS_SIZE == 56
+
 
 @dataclass
 class Metrics:
@@ -43,6 +100,7 @@ class Metrics:
 
 
 class IPCClient:
+
     def __init__(
         self,
         host: str = "192.168.50.1",
@@ -57,11 +115,14 @@ class IPCClient:
     def connect(self):
         self.socket = socket.socket(
             socket.AF_INET,
-            socket.SOCK_STREAM
+            socket.SOCK_STREAM,
         )
 
         self.socket.connect(
-            (self.host, self.port)
+            (
+                self.host,
+                self.port,
+            )
         )
 
     def close(self):
@@ -82,9 +143,19 @@ class IPCClient:
         self.frame_id += 1
 
         frame_id = self.frame_id
-        timestamp_ms = time.time_ns() // 1_000_000
 
-        transfer_start = time.perf_counter_ns()
+        timestamp_ms = (
+            time.time_ns()
+            // 1_000_000
+        )
+
+        #
+        # RESULT
+        #
+
+        transfer_start = (
+            time.perf_counter_ns()
+        )
 
         self.send_result(
             result,
@@ -92,11 +163,18 @@ class IPCClient:
             timestamp_ms,
         )
 
-        transfer_end = time.perf_counter_ns()
+        transfer_end = (
+            time.perf_counter_ns()
+        )
 
         metrics.transfer_time_us = (
-            transfer_end - transfer_start
+            transfer_end
+            - transfer_start
         ) // 1_000
+
+        #
+        # METRICS
+        #
 
         self.send_metrics(
             metrics,
@@ -110,31 +188,49 @@ class IPCClient:
         frame_id: int,
         timestamp_ms: int,
     ):
-        hand_present = 0
+        #
+        # Hand presence.
+        #
 
-        class_id = NO_CLASSIFICATION
-        confidence = 0.0
+        hand_present = (
+            1
+            if result.hand_present
+            else 0
+        )
 
-        x = 0.0
-        y = 0.0
-        width = 0.0
-        height = 0.0
+        #
+        # Classification.
+        #
 
-        if result.classifications:
-            classification = result.classifications[0]
+        if result.hand_present:
+            class_id = result.class_id
+            confidence = result.confidence
+        else:
+            class_id = 0xFFFFFFFF
+            confidence = 0.0
 
-            class_id = classification.class_id
-            confidence = classification.confidence
+        #
+        # Hand position.
+        #
 
-        if result.detections:
-            detection = result.detections[0]
+        hand_x = 0.0
+        hand_y = 0.0
 
-            hand_present = 1
+        if result.hand is not None:
+            hand_x = result.hand.x
+            hand_y = result.hand.y
 
-            x = detection.x
-            y = detection.y
-            width = detection.width
-            height = detection.height
+        #
+        # We no longer use a bounding box for
+        # cursor positioning.
+        #
+        # Keep width/height at zero because the
+        # current C++ protocol still contains these
+        # four fields.
+        #
+
+        hand_width = 0.0
+        hand_height = 0.0
 
         payload = struct.pack(
             RESULT_FORMAT,
@@ -147,15 +243,15 @@ class IPCClient:
             class_id,
             confidence,
 
-            x,
-            y,
-            width,
-            height,
+            hand_x,
+            hand_y,
+            hand_width,
+            hand_height,
         )
 
         self.send_message(
             MESSAGE_RESULT,
-            payload
+            payload,
         )
 
     def send_metrics(
@@ -186,7 +282,7 @@ class IPCClient:
 
         self.send_message(
             MESSAGE_METRICS,
-            payload
+            payload,
         )
 
     def send_message(
